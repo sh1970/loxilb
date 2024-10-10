@@ -146,7 +146,7 @@ spawn_docker_host() {
     sudo mount -o bind /proc/$pid/ns/net /var/run/netns/$dname
   fi
 
-  $hexec $dname ifconfig lo up
+  $hexec $dname ip link set lo up
   $hexec $dname sysctl net.ipv6.conf.all.disable_ipv6=1 2>&1 >> /dev/null
   #$hexec $dname sysctl net.ipv4.conf.all.arp_accept=1 2>&1 >> /dev/null
   if [ -f /proc/sys/net/ipv4/conf/eth0/arp_ignore ]; then
@@ -557,8 +557,12 @@ function create_lb_rule() {
   echo "$1: loxicmd create lb ${args[*]}"
   $dexec $1 loxicmd create lb ${args[*]}
 
-  hook=$($dexec llb1 ntc filter show dev eth0 ingress | grep tc_packet_hook)
-  if [[ $hook != *"tc_packet_hook"* ]]; then
+  if [[ ${args[*]} == *"--mode=fullproxy"* ]]; then
+    return
+  fi
+
+  hook=$($dexec $1 tc filter show dev eth0 ingress | grep tc_packet_func)
+  if [[ $hook != *"tc_packet_func"* ]]; then
     echo "ERROR : No hook point found";
     exit 1
   fi

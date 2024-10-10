@@ -22,7 +22,7 @@ var Opts struct {
 	LogLevel          string         `long:"loglevel" description:"One of debug,info,error,warning,notice,critical,emergency,alert" default:"debug"`
 	CPUProfile        string         `long:"cpuprofile" description:"Enable cpu profiling and specify file to use" default:"none" env:"CPUPROF"`
 	Prometheus        bool           `short:"p" long:"prometheus" description:"Run prometheus thread"`
-	CSumDisable       bool           `long:"disable-csum" description:"Disable checksum update(experimental)"`
+	CRC32SumDisable   bool           `long:"disable-crc32" description:"Disable crc32 checksum update(experimental)"`
 	PassiveEPProbe    bool           `long:"passive-probe" description:"Enable passive liveness probes(experimental)"`
 	RssEnable         bool           `long:"rss-enable" description:"Enable rss optimization(experimental)"`
 	EgrHooks          bool           `long:"egr-hooks" description:"Enable eBPF egress hooks(experimental)"`
@@ -39,4 +39,5 @@ var Opts struct {
 	CloudInstance     string         `long:"cloudinstance" description:"instance-name to distinguish instance sets running in a same cloud-region"`
 	ConfigPath        string         `long:"config-path" description:"Config file path" default:"/etc/loxilb/"`
 	ProxyModeOnly     bool           `long:"proxyonlymode" description:"Run loxilb in proxy mode only, no Datapath"`
+	WhiteList         string         `long:"whitelist" description:"Regex string of whitelisted interface(experimental)" default:"none"`
 }

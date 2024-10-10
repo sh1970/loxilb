@@ -86,6 +86,8 @@ type NlH struct {
 	IMap      map[string]Intf
 	BlackList string
 	BLRgx     *regexp.Regexp
+	WhiteList string
+	WLRgx     *regexp.Regexp
 }
 
 var (
@@ -97,7 +99,12 @@ func NlpRegister(hook cmn.NetHookInterface) {
 	hooks = hook
 }
 
-func iSBlackListedIntf(name string, masterIdx int) bool {
+func NlpIsBlackListedIntf(name string, masterIdx int) bool {
+	if nNl.WhiteList != "none" {
+		filter := nNl.WLRgx.MatchString(name)
+		return !filter
+	}
+
 	if name == "lo" {
 		return true
 	}
@@ -900,8 +907,9 @@ func ModLink(link nlp.Link, add bool) int {
 			Link: linkState, State: state, Mtu: mtu, Master: master, Real: real,
 			TunID: tunId, TunDst: tunDst, TunSrc: tunSrc})
 		if err != nil {
-			tk.LogIt(tk.LogError, "[NLP] Port %v, %v, %v, %v add failed\n", name, ifMac, state, mtu)
-			fmt.Println(err)
+			if !strings.Contains(err.Error(), "port exists") {
+				tk.LogIt(tk.LogError, "[NLP] Port %v, %v, %v, %v add failed\n", name, ifMac, state, mtu)
+			}
 		} else {
 			tk.LogIt(tk.LogInfo, "[NLP] Port %v, %v, %v, %v add [OK]\n", name, ifMac, state, mtu)
 		}
@@ -910,7 +918,6 @@ func ModLink(link nlp.Link, add bool) int {
 		ret, err = hooks.NetPortDel(&cmn.PortMod{Dev: name, Ptype: pType})
 		if err != nil {
 			tk.LogIt(tk.LogError, "[NLP] Port %v, %v, %v, %v delete failed\n", name, ifMac, state, mtu)
-			fmt.Println(err)
 		} else {
 			tk.LogIt(tk.LogInfo, "[NLP] Port %v, %v, %v, %v delete [OK]\n", name, ifMac, state, mtu)
 		}
@@ -1289,7 +1296,7 @@ func DelRoute(route nlp.Route) int {
 func LUWorkSingle(m nlp.LinkUpdate) int {
 	var ret int
 
-	if iSBlackListedIntf(m.Link.Attrs().Name, m.Link.Attrs().MasterIndex) {
+	if NlpIsBlackListedIntf(m.Link.Attrs().Name, m.Link.Attrs().MasterIndex) {
 		return -1
 	}
 
@@ -1342,7 +1349,7 @@ func NUWorkSingle(m nlp.NeighUpdate) int {
 		return -1
 	}
 
-	if iSBlackListedIntf(link.Attrs().Name, link.Attrs().MasterIndex) {
+	if NlpIsBlackListedIntf(link.Attrs().Name, link.Attrs().MasterIndex) {
 		return -1
 	}
 
@@ -1363,22 +1370,22 @@ func RUWorkSingle(m nlp.RouteUpdate) int {
 	if len(m.MultiPath) <= 0 {
 		link, err := nlp.LinkByIndex(m.LinkIndex)
 		if err != nil {
-			tk.LogIt(tk.LogError, "RUWorkSingle: link find error %s", err)
+			tk.LogIt(tk.LogError, "RUWorkSingle: link find error %s\n", err)
 			return -1
 		}
 
-		if iSBlackListedIntf(link.Attrs().Name, link.Attrs().MasterIndex) {
+		if NlpIsBlackListedIntf(link.Attrs().Name, link.Attrs().MasterIndex) {
 			return -1
 		}
 	} else {
 		for _, path := range m.MultiPath {
 			link, err := nlp.LinkByIndex(path.LinkIndex)
 			if err != nil {
-				tk.LogIt(tk.LogError, "RUWorkSingle: link find error %s", err)
+				tk.LogIt(tk.LogError, "RUWorkSingle: link find error %s\n", err)
 				return -1
 			}
 
-			if iSBlackListedIntf(link.Attrs().Name, link.Attrs().MasterIndex) {
+			if NlpIsBlackListedIntf(link.Attrs().Name, link.Attrs().MasterIndex) {
 				return -1
 			}
 		}
@@ -1454,7 +1461,7 @@ func NLWorker(nNl *NlH, bgpPeerMode bool, ch chan bool, wch chan bool) {
 
 	defer func() {
 		if e := recover(); e != nil {
-			tk.LogIt(tk.LogCritical, "%s: %s", e, debug.Stack())
+			tk.LogIt(tk.LogCritical, "%s: %s\n", e, debug.Stack())
 		}
 		hooks.NetHandlePanic()
 		os.Exit(1)
@@ -1482,7 +1489,7 @@ func GetBridges() {
 		return
 	}
 	for _, link := range links {
-		if iSBlackListedIntf(link.Attrs().Name, link.Attrs().MasterIndex) {
+		if NlpIsBlackListedIntf(link.Attrs().Name, link.Attrs().MasterIndex) {
 			continue
 		}
 		switch link.(type) {
@@ -1508,7 +1515,7 @@ func NlpGet(ch chan bool) int {
 
 	for _, link := range links {
 
-		if iSBlackListedIntf(link.Attrs().Name, link.Attrs().MasterIndex) {
+		if NlpIsBlackListedIntf(link.Attrs().Name, link.Attrs().MasterIndex) {
 			continue
 		}
 
@@ -1520,7 +1527,7 @@ func NlpGet(ch chan bool) int {
 
 	for _, link := range links {
 
-		if iSBlackListedIntf(link.Attrs().Name, link.Attrs().MasterIndex) {
+		if NlpIsBlackListedIntf(link.Attrs().Name, link.Attrs().MasterIndex) {
 			// Need addresss to work with
 			addrs, err := nlp.AddrList(link, nlp.FAMILY_ALL)
 			if err != nil {
@@ -1620,61 +1627,61 @@ func LbSessionGet(done bool) int {
 
 		if _, err := os.Stat(opt.Opts.ConfigPath + "/EPconfig.txt"); errors.Is(err, os.ErrNotExist) {
 			if err != nil {
-				tk.LogIt(tk.LogInfo, "[NLP] No EndPoint config file : %s \n", err.Error())
+				tk.LogIt(tk.LogInfo, "[NLP] Continuing without EP config file: %s\n", err.Error())
 			}
 		} else {
 			applyEPConfig()
 		}
-		tk.LogIt(tk.LogInfo, "[NLP] EndPoint done\n")
+		tk.LogIt(tk.LogInfo, "[NLP] EndPoint config process done\n")
 
 		if _, err := os.Stat(opt.Opts.ConfigPath + "/lbconfig.txt"); errors.Is(err, os.ErrNotExist) {
 			if err != nil {
-				tk.LogIt(tk.LogInfo, "[NLP] No load balancer config file : %s \n", err.Error())
+				tk.LogIt(tk.LogInfo, "[NLP] Continuing without LB config file : %s \n", err.Error())
 			}
 		} else {
 			applyLoadBalancerConfig()
 		}
+		tk.LogIt(tk.LogInfo, "[NLP] LoadBalancer config done\n")
 
-		tk.LogIt(tk.LogInfo, "[NLP] LoadBalancer done\n")
 		if _, err := os.Stat(opt.Opts.ConfigPath + "/sessionconfig.txt"); errors.Is(err, os.ErrNotExist) {
 			if err != nil {
-				tk.LogIt(tk.LogInfo, "[NLP] No Session config file : %s \n", err.Error())
+				tk.LogIt(tk.LogInfo, "[NLP] Continuing without Session config file : %s \n", err.Error())
 			}
 		} else {
 			applySessionConfig()
 		}
+		tk.LogIt(tk.LogInfo, "[NLP] Session config done\n")
 
-		tk.LogIt(tk.LogInfo, "[NLP] Session done\n")
 		if _, err := os.Stat(opt.Opts.ConfigPath + "/sessionulclconfig.txt"); errors.Is(err, os.ErrNotExist) {
 			if err != nil {
-				tk.LogIt(tk.LogInfo, "[NLP] No UlCl config file : %s \n", err.Error())
+				tk.LogIt(tk.LogInfo, "[NLP] Continuing without UlCl config file : %s \n", err.Error())
 			}
 		} else {
 			applyUlClConfig()
 		}
+		tk.LogIt(tk.LogInfo, "[NLP] Session UlCl config done\n")
 
-		tk.LogIt(tk.LogInfo, "[NLP] Session UlCl done\n")
 		if _, err := os.Stat(opt.Opts.ConfigPath + "/FWconfig.txt"); errors.Is(err, os.ErrNotExist) {
 			if err != nil {
-				tk.LogIt(tk.LogInfo, "[NLP] No Firewall config file : %s \n", err.Error())
+				tk.LogIt(tk.LogInfo, "[NLP] Continuing without Firewall config file : %s \n", err.Error())
 			}
 		} else {
 			applyFWConfig()
 		}
-		tk.LogIt(tk.LogInfo, "[NLP] Firewall done\n")
-
-		tk.LogIt(tk.LogInfo, "[NLP] LbSessionGet done\n")
+		tk.LogIt(tk.LogInfo, "[NLP] Firewall config done\n")
 	}
 
 	return 0
 }
 
-func NlpInit(bgpPeerMode bool, blackList string, ipvsCompat bool) *NlH {
+func NlpInit(bgpPeerMode bool, blackList, whitelist string, ipvsCompat bool) *NlH {
 
 	nNl = new(NlH)
 
 	nNl.BlackList = blackList
 	nNl.BLRgx = regexp.MustCompile(blackList)
+	nNl.WhiteList = whitelist
+	nNl.WLRgx = regexp.MustCompile(whitelist)
 	checkInit := make(chan bool)
 	waitInit := make(chan bool)
 

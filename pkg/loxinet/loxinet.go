@@ -108,6 +108,8 @@ func (mh *loxiNetH) ParamSet(param cmn.ParamMod) (int, error) {
 func (mh *loxiNetH) ParamGet(param *cmn.ParamMod) (int, error) {
 	logLevel := "n/a"
 	switch mh.logger.CurrLogLevel {
+	case tk.LogTrace:
+		logLevel = "trace"
 	case tk.LogDebug:
 		logLevel = "debug"
 	case tk.LogInfo:
@@ -167,6 +169,25 @@ func loxiNetTicker(bgpPeerMode bool) {
 				tk.LogIt(tk.LogCritical, "Shutdown on sig %v\n", sig)
 				// TODO - More subsystem cleanup TBD
 				mh.zr.Rules.RuleDestructAll()
+				if mh.cloudHook != nil {
+					// Cleanup any cloud resources
+					ciState, _ := mh.has.CIStateGetInst(cmn.CIDefault)
+					if ciState == "MASTER" {
+						bfdSessions, err := mh.has.CIBFDSessionGet()
+						if err == nil {
+							cleanCloudResources := true
+							for _, bfdSession := range bfdSessions {
+								if bfdSession.State != "BFDDown" {
+									cleanCloudResources = false
+									break
+								}
+							}
+							if cleanCloudResources {
+								mh.cloudHook.CloudDestroyVIPNetWork()
+							}
+						}
+					}
+				}
 				if !bgpPeerMode {
 					mh.dpEbpf.DpEbpfUnInit()
 				}
@@ -221,7 +242,7 @@ func loxiNetInit() {
 	mh.self = opts.Opts.ClusterSelf
 	mh.rssEn = opts.Opts.RssEnable
 	mh.eHooks = opts.Opts.EgrHooks
-	mh.sumDis = opts.Opts.CSumDisable
+	mh.sumDis = opts.Opts.CRC32SumDisable
 	mh.pProbe = opts.Opts.PassiveEPProbe
 	mh.lSockPolicy = opts.Opts.LocalSockPolicy
 	mh.sockMapEn = opts.Opts.SockMapSupport
@@ -317,7 +338,7 @@ func loxiNetInit() {
 	// Initialize the nlp subsystem
 	if !opts.Opts.NoNlp {
 		nlp.NlpRegister(NetAPIInit(opts.Opts.BgpPeerMode))
-		nlp.NlpInit(opts.Opts.BgpPeerMode, opts.Opts.BlackList, opts.Opts.IPVSCompat)
+		nlp.NlpInit(opts.Opts.BgpPeerMode, opts.Opts.BlackList, opts.Opts.WhiteList, opts.Opts.IPVSCompat)
 	}
 
 	// Initialize the k8s subsystem
